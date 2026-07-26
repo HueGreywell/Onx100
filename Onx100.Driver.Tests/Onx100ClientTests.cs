@@ -498,6 +498,88 @@ public sealed class Onx100ClientTests
         Assert.Equal("ONX-100", states[0].Model);
     }
 
+    [Fact]
+    public async Task QueryAllAsync_Success_EmitsSingleStateChange()
+    {
+        var (client, transport) = await CreateConnectedClientAsync();
+        await using var d = client;
+
+        var stateChanges = new List<OnxDeviceState>();
+        client.StateChanged += (_, e) => stateChanges.Add(e.State);
+
+        transport.EnqueueResponse("PWR OFF");
+        transport.EnqueueResponse("VOL 32");
+        transport.EnqueueResponse("MUTE ON");
+
+        var result = await client.QueryAllAsync();
+
+        Assert.Single(stateChanges);
+        Assert.Equal(OnxPowerState.Off, result.Power);
+        Assert.Equal(50, result.Volume);
+        Assert.True(result.IsMuted);
+    }
+
+    [Fact]
+    public async Task QueryAllAsync_PowerOn_AlsoQueriesInput()
+    {
+        var (client, transport) = await CreateConnectedClientAsync();
+        await using var d = client;
+
+        transport.EnqueueResponse("PWR ON");
+        transport.EnqueueResponse("VOL 19");
+        transport.EnqueueResponse("MUTE OFF");
+        transport.EnqueueResponse("IN 3");
+
+        var result = await client.QueryAllAsync();
+
+        Assert.Equal(OnxPowerState.On, result.Power);
+        Assert.Equal(25, result.Volume);
+        Assert.False(result.IsMuted);
+        Assert.Equal(3, result.SelectedInput);
+        Assert.Equal("IN ?", transport.LastCommand);
+    }
+
+    [Fact]
+    public async Task QueryAllAsync_ErrorOnVolumeQuery_ThrowsAndStateUnchanged()
+    {
+        var (client, transport) = await CreateConnectedClientAsync();
+        await using var d = client;
+
+        var stateBefore = client.CurrentState;
+
+        var stateChanges = new List<OnxDeviceState>();
+        client.StateChanged += (_, e) => stateChanges.Add(e.State);
+
+        transport.EnqueueResponse("PWR OFF");
+        transport.EnqueueResponse("ERR 03");  // VOL query fails
+
+        await Assert.ThrowsAsync<OnxUnavailableException>(() => client.QueryAllAsync());
+
+        Assert.Empty(stateChanges);
+        Assert.Equal(stateBefore, client.CurrentState);
+    }
+
+    [Fact]
+    public async Task QueryAllAsync_ErrorOnMuteQuery_ThrowsAndStateUnchanged()
+    {
+        var (client, transport) = await CreateConnectedClientAsync();
+        await using var d = client;
+
+        var stateBefore = client.CurrentState;
+
+        var stateChanges = new List<OnxDeviceState>();
+        client.StateChanged += (_, e) => stateChanges.Add(e.State);
+
+        transport.EnqueueResponse("PWR ON");
+        transport.EnqueueResponse("VOL 32");
+        transport.EnqueueResponse("ERR 01");  // MUTE query fails
+
+        await Assert.ThrowsAsync<OnxUnknownCommandException>(() => client.QueryAllAsync());
+
+        Assert.Empty(stateChanges);
+        Assert.Equal(stateBefore, client.CurrentState);
+    }
+
     /// <summary>
     /// Creates a connected client with the standard greeting and RefreshState
     /// responses already enqueued. The device reports power OFF so RefreshState

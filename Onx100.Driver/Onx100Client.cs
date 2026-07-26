@@ -303,6 +303,39 @@ public sealed class Onx100Client : IAsyncDisposable
         return muted;
     }
 
+    /// <summary>
+    /// Queries all device state (power, volume, mute, and input when powered on)
+    /// and emits a single <see cref="StateChanged"/> event.
+    /// </summary>
+    public async Task<OnxDeviceState> QueryAllAsync(CancellationToken ct = default)
+    {
+        var powerMsg = await ExecuteAsync("PWR ?", ct).ConfigureAwait(false);
+        var power = Require<OnxPowerMessage>(powerMsg, "PWR ?").State;
+
+        var volMsg = await ExecuteAsync("VOL ?", ct).ConfigureAwait(false);
+        var volume = Require<OnxVolumeMessage>(volMsg, "VOL ?").Volume;
+
+        var muteMsg = await ExecuteAsync("MUTE ?", ct).ConfigureAwait(false);
+        var muted = Require<OnxMuteMessage>(muteMsg, "MUTE ?").IsMuted;
+
+        int? input = null;
+        if (power == OnxPowerState.On)
+        {
+            var inputMsg = await ExecuteAsync("IN ?", ct).ConfigureAwait(false);
+            input = Require<OnxInputMessage>(inputMsg, "IN ?").Input;
+        }
+
+        var state = CurrentState with
+        {
+            Power = power,
+            Volume = volume,
+            IsMuted = muted,
+            SelectedInput = input ?? CurrentState.SelectedInput
+        };
+        UpdateState(state);
+        return state;
+    }
+
     private async Task ExpectOkAsync(string command, CancellationToken ct)
     {
         var msg = await ExecuteAsync(command, ct).ConfigureAwait(false);
@@ -436,17 +469,13 @@ public sealed class Onx100Client : IAsyncDisposable
     }
 
     /// <summary>
-    /// Queries all device state available in the current power state.
-    /// PWR, VOL, and MUTE queries work in all states; IN only works when fully ON.
+    /// Best-effort state refresh used internally after connect/power-on.
     /// </summary>
     private async Task RefreshState()
     {
         try
         {
-            var power = await QueryPowerAsync().ConfigureAwait(false);
-            await QueryVolumeAsync().ConfigureAwait(false);
-            await QueryMuteAsync().ConfigureAwait(false);
-            if (power == OnxPowerState.On) await QueryInputAsync().ConfigureAwait(false);
+            await QueryAllAsync().ConfigureAwait(false);
         }
         catch
         {
