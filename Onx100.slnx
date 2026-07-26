@@ -2,4 +2,5 @@
   <Project Path="Onx100.Driver/Onx100.Driver.csproj" />
   <Project Path="Onx100.Driver.Tests/Onx100.Driver.Tests.csproj" />
   <Project Path="Onx100.Demo/Onx100.Demo.csproj" />
+  <Project Path="Onx100.Api/Onx100.Api.csproj" />
 </Solution>
