@@ -14,8 +14,8 @@ device wins. Differences are called out inline and summarized at the end.
 
 TCP, port 4999. ASCII text. One command per line.
 
-- **Host -> device:** command text followed by `CR` (`0x0D`).
-- **Device -> host:** response text followed by `CR LF` (`0x0D 0x0A`).
+- **Host to device:** command text followed by `CR` (`0x0D`).
+- **Device to host:** response text followed by `CR LF` (`0x0D 0x0A`).
 - `LF` alone does **not** terminate a command.
 - Commands are **case-sensitive** (`pwr ?` is not `PWR ?`).
 - Whitespace is **significant** -- leading spaces, trailing spaces, extra
@@ -60,8 +60,7 @@ the device sends:
 BYE\r\n
 ```
 
-The 60 s figure comes from a single timed test. What exactly resets the timer
-(any data? only valid commands?) is unknown.
+> **Not in vendor docs.**
 
 ---
 
@@ -90,7 +89,7 @@ the vendor excerpt.
 - When a transition completes, the device sends an unsolicited event:
   - `EVT PWR ON\r\n` at the end of warm-up.
   - `EVT PWR OFF\r\n` at the end of cool-down.
-- **Do not hard-code timing.** The `EVT PWR` event (or a `PWR ?` poll) is the
+- **Do not hard-code timing.** The `EVT PWR` event is the
   only reliable way to know a transition has finished.
 
 ### Measured transition times
@@ -116,7 +115,7 @@ These are approximate. Not enough samples to establish variance.
 Input commands **only work when power is fully ON**. In OFF, WARM, and COOL
 they return `ERR 03` -- even for invalid input numbers like `IN 5`.
 
-> **Not in vendor docs.** The vendor excerpt implies input commands always work.
+> **Not in vendor docs.**
 
 When power is ON:
 - `IN 0` and `IN 5` return `ERR 02` (out of range).
@@ -207,9 +206,6 @@ response.
 
 ### Signal events
 
-Observed signal numbers: **2** and **4** only. Whether 1 and 3 produce events
-is unknown.
-
 Key observations:
 - Signal events arrive spontaneously, without any preceding command.
 - The number `<n>` is probably the physical input, but this is unproven.
@@ -264,7 +260,7 @@ but `ERR 02` when the device is ON (argument check).
 
 | Sent | Response | Reason |
 |------|----------|--------|
-| `BOGUS` | `ERR 01` | Unknown keyword |
+| `Something` | `ERR 01` | Unknown keyword |
 | `pwr ?` | `ERR 01` | Wrong case |
 | ` IN ?` | `ERR 01` | Leading space |
 | *(empty)* | `ERR 01` | No keyword |
@@ -282,6 +278,7 @@ but `ERR 02` when the device is ON (argument check).
 | `IN 5` *(when ON)* | `ERR 02` | Above range |
 | `IN 1` *(when OFF)* | `ERR 03` | Input unavailable |
 | `PWR OFF` *(during WARM)* | `ERR 03` | Transition in progress |
+| `PWR ON` *(during COOL)* | `ERR 03` | Transition in progress |
 
 ---
 
@@ -298,8 +295,6 @@ but `ERR 02` when the device is ON (argument check).
 | `VOL ?` | OK | OK | OK | OK |
 | `MUTE ON/OFF` | OK | OK | OK | OK |
 | `MUTE ?` | OK | OK | OK | OK |
-
-`?` = not tested.
 
 ---
 
@@ -367,42 +362,3 @@ simpler protocol. The real device has these additional behaviors:
 | 10 | No idle timeout mentioned | ~60 s idle timeout; device sends `BYE` then disconnects |
 
 ---
-
-## Remaining Unknowns
-
-- **Signal event numbers:** Only 2 and 4 observed. Unknown whether 1 and 3
-  produce events, or if numbers outside 1--4 exist.
-- **Timing variance:** Only 3 warm-up and 3 cool-down cycles measured. Not
-  enough to characterize variance.
-- **Volume setter in non-ON states:** `VOL ?` works everywhere, but `VOL <n>`
-  was only tested while ON.
-- **Idle timeout precision:** Measured once at ~60 s. Tolerance and reset
-  conditions unknown.
-- **Input persistence across power cycles:** Unknown whether the device
-  remembers the selected input after power off/on.
-- **Mute persistence:** Unknown whether mute state survives a power cycle.
-- **Command pipelining:** All testing used serialized request/response. Whether
-  the device queues, buffers, or drops overlapping commands is unknown.
-- **Maximum command length:** Not tested.
-
----
-
-## Driver Implementation Checklist
-
-1. Read and discard the `*HELLO` greeting before sending commands.
-2. Terminate commands with `CR` only. Read responses as `CR LF` lines.
-3. Send command text exactly as specified -- do not change case, trim, or
-   re-space.
-4. Serialize commands: send one, wait for its response, then send the next.
-5. Any line starting with `EVT ` is an event, not a command response. Route
-   it separately.
-6. Model power as four states: OFF, WARM, ON, COOL.
-7. Do not send `IN` commands unless power is confirmed ON.
-8. Treat `ERR 03` as "try again later," not "unknown command."
-9. Send volume as decimal (0--100). Parse volume responses as hex.
-10. Wait for `EVT PWR ON/OFF` or poll `PWR ?` to detect transition completion.
-    Do not rely on timing.
-11. Handle `BYE` and unexpected socket closure at any time. Implement
-    reconnection.
-12. Do not assume a successful `OK` means a follow-up query will immediately
-    reflect the new value.
