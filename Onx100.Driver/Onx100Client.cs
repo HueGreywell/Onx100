@@ -93,6 +93,9 @@ public sealed class Onx100Client : IAsyncDisposable
     /// <summary>Raised when the connection is lost (after cleanup).</summary>
     public event EventHandler? Disconnected;
 
+    /// <summary>Raised when the automatic reconnection loop begins.</summary>
+    public event EventHandler? Reconnecting;
+
     /// <summary>
     /// Raised when automatic reconnection has exhausted
     /// <c>maxReconnectAttempts</c> and will no longer retry.
@@ -424,6 +427,7 @@ public sealed class Onx100Client : IAsyncDisposable
 
                 if (_autoReconnect && !_disposed)
                 {
+                    Reconnecting?.Invoke(this, EventArgs.Empty);
                     _reconnectCts = new CancellationTokenSource();
                     _reconnectTask = ReconnectAsync(_reconnectCts.Token);
                 }
