@@ -24,10 +24,3 @@ public sealed class OnxNotConnectedException()
 /// </summary>
 public sealed class OnxConnectionClosedException(string message)
     : OnxTransportException(message);
-
-/// <summary>
-/// Thrown when the device sends an unexpected or unrecognized response
-/// where a specific message type was required.
-/// </summary>
-public sealed class OnxUnexpectedResponseException(string message)
-    : OnxTransportException(message);
